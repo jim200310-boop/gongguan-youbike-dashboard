@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10241f">
+  <title>臺大公館校區單車看板</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    :root { color-scheme: light; }
+    body { background:#f4f6f2; color:#17221e; font-family:Inter,"Noto Sans TC",system-ui,-apple-system,"Segoe UI",sans-serif; }
+    .panel { background:#fff; border:1px solid #e4e9e3; border-radius:18px; box-shadow:0 8px 28px rgba(24,45,35,.045); }
+    .scrollbar::-webkit-scrollbar { width:6px;height:6px } .scrollbar::-webkit-scrollbar-thumb { background:#cbd5cf;border-radius:8px }
+    .chart-wrap { position:relative;height:310px } .line-wrap { position:relative;height:220px }
+    @media(max-width:640px){.chart-wrap{height:280px}.line-wrap{height:200px}}
+  </style>
+</head>
+<body>
+  <header class="bg-[#10241f] text-white">
+    <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 sm:py-7">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div class="mb-2 flex items-center gap-2 text-xs font-semibold tracking-[.18em] text-emerald-300"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>LIVE · CAMPUS BIKE</div>
+          <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">臺大公館校區單車看板</h1>
+          <p class="mt-2 text-sm text-slate-300">趕場前看一眼，附近還有車嗎？</p>
+          <p class="mt-3 inline-flex rounded-full border border-emerald-300/40 bg-emerald-300/10 px-3 py-1.5 text-sm font-semibold tracking-wide text-emerald-200">資通四勤 121271101 許濬鵬</p>
+        </div>
+        <div class="rounded-xl border border-white/15 bg-white/5 px-4 py-3 sm:min-w-72">
+          <div class="flex items-center justify-between gap-3">
+            <div><p class="text-xs text-slate-300">下次自動更新</p><p class="mt-1 text-lg font-semibold"><span id="countdown">60</span><span class="ml-1 text-sm font-normal text-slate-300">秒</span></p></div>
+            <button id="refreshBtn" class="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-[#10241f] transition hover:bg-emerald-300 disabled:opacity-60">立即更新</button>
+          </div>
+          <p id="fetchTime" class="mt-2 text-xs text-slate-400">尚未取得資料</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+    <div id="status" class="hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
+    <div id="staleNotice" class="hidden rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">⚠ 資料可能延遲：資料時間已超過 30 分鐘，請留意現場狀況。</div>
+
+    <section class="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="即時摘要">
+      <article class="panel p-4 sm:p-5"><p class="text-sm text-slate-500">監控站點</p><div class="mt-2 flex items-baseline gap-2"><strong id="stationCount" class="text-3xl font-bold">—</strong><span class="text-sm text-slate-500">站</span></div><p class="mt-1 text-xs text-slate-400">臺大、公館及校園周邊</p></article>
+      <article class="panel p-4 sm:p-5"><p class="text-sm text-slate-500">目前可借車輛</p><div class="mt-2 flex items-baseline gap-2"><strong id="bikeCount" class="text-3xl font-bold text-emerald-700">—</strong><span class="text-sm text-slate-500">輛</span></div><p class="mt-1 text-xs text-slate-400">所列站點可借車總數</p></article>
+      <article class="panel p-4 sm:p-5"><p class="text-sm text-slate-500">無車站點</p><div class="mt-2 flex items-baseline gap-2"><strong id="zeroCount" class="text-3xl font-bold text-rose-600">—</strong><span class="text-sm text-slate-500">站</span></div><p class="mt-1 text-xs text-slate-400">可借車輛為 0，出發前請確認</p></article>
+    </section>
+
+    <section class="panel p-4 sm:p-5">
+      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div><h2 class="font-bold">各站可借車輛</h2><p class="mt-1 text-xs text-slate-500">數字為目前可借數量；紅色代表無車</p></div>
+        <div class="text-xs text-slate-500">資料時間（最新 mday）：<span id="dataTime" class="font-semibold text-slate-700">—</span></div>
+      </div>
+      <div class="chart-wrap"><canvas id="stationChart" aria-label="各站可借車輛長條圖"></canvas></div>
+    </section>
+
+    <section class="panel p-4 sm:p-5">
+      <div class="mb-4"><h2 class="font-bold">開啟期間變化</h2><p class="mt-1 text-xs text-slate-500">每次成功更新記錄一次，關閉頁面後記錄不保留</p></div>
+      <div class="line-wrap"><canvas id="historyChart" aria-label="開啟期間可借車輛與無車站點變化折線圖"></canvas></div>
+    </section>
+
+    <section class="panel overflow-hidden">
+      <div class="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div><h2 class="font-bold">站點一覽 <span id="listedCount" class="ml-1 text-sm font-normal text-slate-500">(0)</span></h2><p id="zeroSummary" class="mt-1 text-sm font-semibold text-rose-600">尚未取得站點資訊</p></div>
+        <label class="relative block sm:w-72"><span class="sr-only">搜尋站點</span><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">⌕</span><input id="search" type="search" placeholder="搜尋站名或行政區…" class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"></label>
+      </div>
+      <div id="stationList" class="scrollbar grid max-h-[620px] grid-cols-1 gap-3 overflow-y-auto p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3"><p class="col-span-full py-8 text-center text-sm text-slate-400">正在載入即時資料…</p></div>
+    </section>
+
+    <footer class="rounded-xl bg-[#e9eee9] px-4 py-4 text-xs leading-6 text-slate-600 sm:px-5">
+      <p class="font-semibold text-slate-700">資料來源與授權</p>
+      <p>提供機關：臺北市政府交通局｜資料集：臺北市 YouBike2.0 即時資訊</p>
+      <p>資料來源：<a class="font-medium text-emerald-800 underline" href="https://data.gov.tw/dataset/137993" target="_blank" rel="noopener">臺北市 YouBike2.0 即時資訊</a>｜採用「政府資料開放授權條款－第 1 版」</p>
+      <p>欄位說明：sarea 行政區、sna 場站名稱、available_rent_bikes（sbi）可借車輛、available_return_bikes（bemp）可還空位、Quantity（tot）總車位、mday 資料時間。每 1 分鐘自動更新。</p>
+      <p class="mt-1 font-bold text-slate-800">製作：資通四勤 121271101 許濬鵬</p>
+    </footer>
+  </main>
+
+<script>
+(() => {
+  const DATA_URL = 'https://tcgbusfs.blob.core.windows.net/dotapp/youbike/v2/youbike_immediate.json';
+  const INTERVAL = 60;
+  const $ = id => document.getElementById(id);
+  let stations = [], chart = null, historyChart = null, history = [], countdown = INTERVAL, busy = false;
+  const keywords = ['臺大','台大','公館','臺灣大學','台灣大學','臺大醫院','辛亥','羅斯福','新生南路','基隆路','舟山路','長興街','大學'];
+  const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function parseTime(value) {
+    if (!value) return null;
+    const s = String(value).trim();
+    // YouBike mday is commonly YYYYMMDDHHmmss; also accept ISO-like values.
+    if (/^\d{14}$/.test(s)) return new Date(+s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8), +s.slice(8,10), +s.slice(10,12), +s.slice(12,14));
+    if (/^\d{12}$/.test(s)) return new Date(+s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8), +s.slice(8,10), +s.slice(10,12));
+    const d = new Date(s); return Number.isNaN(d.getTime()) ? null : d;
+  }
+  function fmt(d) { return d ? new Intl.DateTimeFormat('zh-TW',{dateStyle:'short',timeStyle:'medium',hour12:false}).format(d) : '時間格式無法辨識'; }
+  function field(o, primary, fallback) { return o[primary] ?? o[fallback] ?? 0; }
+  function isCampusStation(s) {
+    const text = `${s.sna || ''} ${s.ar || ''} ${s.sarea || ''}`;
+    return keywords.some(k => text.includes(k));
+  }
+  function normalize(item) {
+    const s = {...item};
+    s.sbi = num(field(s,'available_rent_bikes','sbi'));
+    s.bemp = num(field(s,'available_return_bikes','bemp'));
+    s.tot = num(field(s,'Quantity','tot'));
+    return s;
+  }
+  function setStatus(message, kind='error') {
+    const el=$('status'); el.textContent=message; el.className='rounded-xl border px-4 py-3 text-sm '+(kind==='error'?'border-rose-200 bg-rose-50 text-rose-800':'border-emerald-200 bg-emerald-50 text-emerald-800');
+  }
+  function hideStatus(){ $('status').classList.add('hidden'); }
+  function render() {
+    const total=stations.length, bikes=stations.reduce((a,s)=>a+s.sbi,0), zero=stations.filter(s=>s.sbi===0).length;
+    $('stationCount').textContent=total; $('bikeCount').textContent=bikes; $('zeroCount').textContent=zero;
+    $('zeroSummary').textContent=zero ? `${zero} 個站點目前沒有可借車輛` : (total ? '目前所有站點皆有車可借' : '沒有符合範圍的站點');
+    const latest=stations.map(s=>parseTime(s.mday)).filter(Boolean).sort((a,b)=>b-a)[0] || null;
+    $('dataTime').textContent=fmt(latest);
+    $('staleNotice').classList.toggle('hidden',!latest || Date.now()-latest.getTime()<=30*60*1000);
+    renderList(); renderCharts();
+  }
+  function renderList() {
+    const q=$('search').value.trim().toLocaleLowerCase();
+    const filtered=stations.filter(s=>`${s.sna||''} ${s.sarea||''} ${s.ar||''}`.toLocaleLowerCase().includes(q));
+    $('listedCount').textContent=`(${filtered.length})`;
+    if (!filtered.length) { $('stationList').innerHTML='<p class="col-span-full py-8 text-center text-sm text-slate-400">沒有符合的站點</p>'; return; }
+    $('stationList').innerHTML=filtered.map(s=>{
+      const out=s.sbi===0;
+      return `<article class="rounded-xl border ${out?'border-rose-200 bg-rose-50':'border-slate-200 bg-white'} p-4">
+        <div class="flex items-start justify-between gap-2"><div class="min-w-0"><h3 class="truncate font-semibold ${out?'text-rose-900':'text-slate-800'}">${esc(s.sna||'未命名站點')}</h3><p class="mt-1 truncate text-xs text-slate-500">${esc(s.sarea||'')}${s.ar?' · '+esc(s.ar):''}</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${out?'bg-rose-600 text-white':'bg-emerald-100 text-emerald-800'}">${out?'無車':'可借'}</span></div>
+        <div class="mt-4 grid grid-cols-3 gap-2 border-t ${out?'border-rose-200':'border-slate-100'} pt-3 text-center"><div><strong class="block text-xl ${out?'text-rose-700':'text-emerald-700'}">${s.sbi}</strong><span class="text-[11px] text-slate-500">可借</span></div><div><strong class="block text-xl text-slate-700">${s.bemp}</strong><span class="text-[11px] text-slate-500">可還</span></div><div><strong class="block text-xl text-slate-700">${s.tot}</strong><span class="text-[11px] text-slate-500">總車位</span></div></div>
+      </article>`;
+    }).join('');
+  }
+  function renderCharts() {
+    if (typeof Chart==='undefined') return;
+    const ctx=$('stationChart').getContext('2d');
+    const labels=stations.map(s=>s.sna||'未命名').map(s=>s.length>13?s.slice(0,12)+'…':s);
+    if(chart) chart.destroy();
+    chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'可借車輛',data:stations.map(s=>s.sbi),backgroundColor:stations.map(s=>s.sbi===0?'#e11d48':'#15966b'),borderRadius:5,maxBarThickness:30}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:stations.length>9?'y':'x',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`可借 ${c.raw} 輛`}}},scales:{x:{beginAtZero:true,ticks:{precision:0},grid:{color:'#edf1ed'}},y:{beginAtZero:true,ticks:{precision:0,autoSkip:false},grid:{color:'#edf1ed'}}}}});
+    const hctx=$('historyChart').getContext('2d'); if(historyChart)historyChart.destroy();
+    historyChart=new Chart(hctx,{type:'line',data:{labels:history.map(h=>h.label),datasets:[{label:'可借車輛',data:history.map(h=>h.bikes),borderColor:'#059669',backgroundColor:'#059669',tension:.3,yAxisID:'y'},{label:'無車站點',data:history.map(h=>h.zero),borderColor:'#e11d48',backgroundColor:'#e11d48',tension:.3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true,title:{display:true,text:'可借車輛'},ticks:{precision:0}},y1:{beginAtZero:true,position:'right',title:{display:true,text:'無車站點'},grid:{drawOnChartArea:false},ticks:{precision:0}}}}});
+  }
+  async function fetchData() {
+    if(busy)return; busy=true; $('refreshBtn').disabled=true; $('refreshBtn').textContent='更新中…';
+    try {
+      const response=await fetch(DATA_URL,{cache:'no-store'}); if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const payload=await response.json(); const rows=Array.isArray(payload)?payload:(Array.isArray(payload?.retVal)?payload.retVal:[]);
+      if(!rows.length)throw new Error('資料格式不符或資料為空');
+      stations=rows.map(normalize).filter(isCampusStation).sort((a,b)=>String(a.sna||'').localeCompare(String(b.sna||''),'zh-Hant'));
+      if(!stations.length) throw new Error('沒有找到符合範圍的站點');
+      const now=new Date(); $('fetchTime').textContent=`網頁最後成功抓取：${fmt(now)}`;
+      history.push({label:new Intl.DateTimeFormat('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(now),bikes:stations.reduce((n,s)=>n+s.sbi,0),zero:stations.filter(s=>s.sbi===0).length});
+      if(history.length>60)history=history.slice(-60);
+      render(); hideStatus();
+    } catch(err) { console.error('YouBike data update failed:',err); setStatus('更新失敗，稍後自動重試。已保留上一筆成功資料。'); }
+    finally { busy=false; $('refreshBtn').disabled=false; $('refreshBtn').textContent='立即更新'; countdown=INTERVAL; }
+  }
+  $('refreshBtn').addEventListener('click',fetchData); $('search').addEventListener('input',renderList);
+  setInterval(()=>{countdown=Math.max(0,countdown-1);$('countdown').textContent=countdown;if(countdown===0)fetchData();},1000);
+  fetchData();
+})();
+</script>
+</body>
+</html>
+
